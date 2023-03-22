@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SchoolRating.Dto;
 using SchoolRating.Models;
+using AutoMapper;
+using SchoolRating.Interface;
 
 namespace SchoolRating.Controllers
 {
@@ -14,167 +16,127 @@ namespace SchoolRating.Controllers
     [ApiController]
     public class RatingsController : ControllerBase
     {
-        private readonly ApplicationDbContext _context;
+        private readonly IRatingsRepository _ratingsRepository;
+        private readonly IMapper _mapper;
 
-        public RatingsController(ApplicationDbContext context)
+
+        public RatingsController(IRatingsRepository ratingsRepository, IMapper mapper)
         {
-            _context = context;
+            _ratingsRepository = ratingsRepository;
+            _mapper = mapper;
         }
 
         // GET: api/Ratings
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<RatingsDto>>> GetRatings()
+        [ProducesResponseType(200, Type = typeof(IEnumerable<Rating>))]
+        public async Task<IActionResult> GetRatings()
         {
-          if (_context.Ratings == null)
-          {
-              return NotFound();
-          }
-            List<RatingsDto> ratings = await (from r in _context.Ratings
-                                              select new RatingsDto()
-                                              {
-                                                  RatingId = r.RatingId,
-                                                  Comments = r.Comments,
-                                                  Score = r.Score,
-                                                  SchoolId = r.SchoolId,
-                                                  name = r.name
-                                              }).ToListAsync();
+            var ratings = _mapper.Map<List<RatingsDto>>(await _ratingsRepository.GetRatingsAsync());
 
-            return ratings;
+
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            return Ok(ratings);
+
         }
 
         // GET: api/Ratings/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<RatingsDto>> GetRating(long id)
+        [ProducesResponseType(200, Type = typeof(Rating))]
+        [ProducesResponseType(400)]
+        public async Task<IActionResult> GetRatingBySchool(long id)
         {
-          if (_context.Ratings == null)
-          {
-              return NotFound();
-          }
-            var rating = await _context.Ratings.FindAsync(id);
-
-            if (rating == null)
+            if (!_ratingsRepository.RatingExist(id))
             {
                 return NotFound();
             }
-
-            RatingsDto ratings = new RatingsDto()
+            var rating = _mapper.Map<List<RatingsDto>>(await _ratingsRepository.GetRatingBySchoolIdAsync(id));
+            if (!ModelState.IsValid)
             {
-                SchoolId = rating.SchoolId,
-                Comments = rating.Comments,
-                name = rating.name,
-                Score = rating.Score
-            };
+                return BadRequest(ModelState);
+            }
 
 
-            return ratings;
+            return Ok(rating);
         }
 
         // PUT: api/Ratings/5
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutRating(long id, RatingsDto ratingDto)
+        [ProducesResponseType(400)]
+        [ProducesResponseType(204)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> PutRating([FromRoute] long id, [FromBody] RatingsDto ratingsDto)
         {
-            if (id != ratingDto.RatingId)
+            if (!_ratingsRepository.RatingExist(id))  return NotFound();
+
+            if (ratingsDto == null) return BadRequest(ModelState);
+
+            if (id != ratingsDto.SchoolId) return BadRequest(ModelState);
+
+            if (!ModelState.IsValid) return BadRequest();
+
+            var rating = _mapper.Map<Rating>(ratingsDto);
+
+            if (!await _ratingsRepository.UpdateRatingAsync(rating))
             {
-                return BadRequest();
-            }
-
-            Rating? rating = await _context.Ratings.FindAsync(id);
-
-            if (rating == null)
-            {
-                return NotFound();
-            }
-
-            // Map the properties of the RatingsDto object to the corresponding properties of the Rating entity
-            rating.Comments = ratingDto.Comments;
-            rating.SchoolId = ratingDto.SchoolId;
-            rating.Score = ratingDto.Score;
-            rating.name = ratingDto.name;
-
-            _context.Entry(rating).State = EntityState.Modified;
-
-            try
-            {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!RatingExists(id))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
+                ModelState.AddModelError("", "Something went wrong updating category");
+                return StatusCode(500, ModelState);
             }
 
             return NoContent();
         }
+
 
         // POST: api/Ratings
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
-        public async Task<ActionResult<Rating>> PostRating(RatingsDto ratingDto)
+        [ProducesResponseType(204)]
+        [ProducesResponseType(400)]
+        public async Task<IActionResult> PostRating([FromBody] RatingsDto ratingsDto)
         {
-            School? school = await _context.Schools.FirstOrDefaultAsync(s => s.SchoolId == ratingDto.SchoolId);
+            if (ratingsDto == null)
+                return BadRequest(ModelState);
 
-            if (school == null)
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            var ratingMap = _mapper.Map<Rating>(ratingsDto);
+
+            if (!await _ratingsRepository.CreateRatingAsync(ratingMap))
             {
-                return NotFound();
+                ModelState.AddModelError("", "Something went wrong while saving");
+                return StatusCode(500, ModelState);
             }
 
-            Rating rating = new Rating()
-            {
-                Comments = ratingDto.Comments,
-                Score = ratingDto.Score,
-                name = ratingDto.name,
-                SchoolId = ratingDto.SchoolId
-            };
-
-            school.Ratings.Add(rating);
-
-            await _context.SaveChangesAsync();
-
-            RatingsDto createdRatingsDto = new RatingsDto()
-            {
-                RatingId = rating.RatingId,
-                Comments = rating.Comments,
-                name = rating.name,
-                SchoolId = rating.SchoolId,
-                Score = rating.Score
-            };
-            
-
-
-
-            return CreatedAtAction(nameof(GetRating), new { id = createdRatingsDto.RatingId}, createdRatingsDto);
+            return Ok("Successfully created");
         }
 
         // DELETE: api/Ratings/5
         [HttpDelete("{id}")]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(204)]
+        [ProducesResponseType(404)]
         public async Task<IActionResult> DeleteRating(long id)
         {
-            if (_context.Ratings == null)
-            {
-                return NotFound();
-            }
-            var rating = await _context.Ratings.FindAsync(id);
-            if (rating == null)
+
+            if (!_ratingsRepository.RatingExist(id))
             {
                 return NotFound();
             }
 
-            _context.Ratings.Remove(rating);
-            await _context.SaveChangesAsync();
+            var ratingToDelete = await _ratingsRepository.GetRatingAsync(id);
+
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            if (!await _ratingsRepository.DeleteRatingAsync(ratingToDelete))
+            {
+                ModelState.AddModelError("", "Something went wrong deleting category");
+            }
 
             return NoContent();
-        }
-
-        private bool RatingExists(long id)
-        {
-            return (_context.Ratings?.Any(e => e.RatingId == id)).GetValueOrDefault();
         }
     }
 }

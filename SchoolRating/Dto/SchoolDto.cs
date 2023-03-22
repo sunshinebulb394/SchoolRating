@@ -28,7 +28,7 @@ namespace SchoolRating.Dto
 
         public string? OtherInfo { get; set; }
 
-        public IList<RatingsDto> Ratings { get; set; } 
+        public IList<RatingsDto>? Ratings { get; set; } 
     }
 }
 

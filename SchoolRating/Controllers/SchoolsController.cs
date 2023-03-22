@@ -2,10 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using AutoMapper;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SchoolRating.Dto;
+using SchoolRating.Interface;
 using SchoolRating.Models;
 
 namespace SchoolRating.Controllers
@@ -14,122 +16,81 @@ namespace SchoolRating.Controllers
     [ApiController]
     public class SchoolsController : ControllerBase
     {
-        private readonly ApplicationDbContext _context;
+        private readonly ISchoolsRepository _schoolsReposiory;
+        private readonly IMapper _mapper;
 
-        public SchoolsController(ApplicationDbContext context)
+        public SchoolsController(ISchoolsRepository schoolsReposiory,IMapper mapper)
         {
-            _context = context;
+            _schoolsReposiory = schoolsReposiory;
+            _mapper = mapper;
         }
 
         // GET: api/Schools
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<SchoolDto>>> GetSchools()
+        [ProducesResponseType(200,Type = typeof(IEnumerable<School>))]
+        public IActionResult GetSchools()
         {
-            
-          if (_context.Schools == null)
-          {
-              return NotFound();
-          }
+            var schools = _mapper.Map<List<SchoolDto>>(_schoolsReposiory.GetSchools());
 
-            List<SchoolDto> schools = await (from s in _context.Schools
-                                       select new SchoolDto()
-                                       {
-                                           SchoolId = s.SchoolId,
-                                           HeadOfSchool = s.HeadOfSchool,
-                                           Address = s.Address,
-                                           City = s.City,
-                                           fees = s.fees,
-                                           Name = s.Name,
-                                           OtherInfo = s.OtherInfo,
-                                           Religion = s.Religion
 
-                                       }).ToListAsync();
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
 
-            return schools;
+            return Ok(schools);
 
         }
+
+
+
 
         // GET: api/Schools/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<SchoolDto>> GetSchool(long id)
+        [ProducesResponseType(200, Type = typeof(School))]
+        [ProducesResponseType(400)]
+        public IActionResult GetSchool(long id)
         {
-            var school = await _context.Schools.Include(s => s.Ratings)
-                .Select(s => new SchoolDto()
-                {
-                    SchoolId = s.SchoolId,
-                    HeadOfSchool = s.HeadOfSchool,
-                    Address = s.Address,
-                    City = s.City,
-                    fees = s.fees,
-                    Name = s.Name,
-                    OtherInfo = s.OtherInfo,
-                    Religion = s.Religion,
-                    Ratings = s.Ratings.Select(sc => new RatingsDto()
-                    {
-                        RatingId = sc.RatingId,
-                        Comments = sc.Comments,
-                        name = sc.name,
-                        Score = sc.Score,
-                        SchoolId = sc.SchoolId
-                    }).ToList()
-
-                }).SingleOrDefaultAsync(s => s.SchoolId == id);
-               
-            
-            if (school == null)
+            if (!_schoolsReposiory.SchoolExist(id))
             {
                 return NotFound();
             }
+            var school = _mapper.Map<SchoolDto>(_schoolsReposiory.GetSchool(id));
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
 
 
-            return school;
+            return Ok(school);
         }
+
+
+         
+            
 
       
 
         // PUT: api/Schools/5
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutSchool(long id, SchoolDto schoolDto)
+        [ProducesResponseType(400)]
+        [ProducesResponseType(204)]
+        [ProducesResponseType(404)]
+        public IActionResult PutSchool([FromRoute]long id,[FromBody] SchoolDto schoolDto)
         {
-            if (id != schoolDto.SchoolId)
+            if (!_schoolsReposiory.SchoolExist(id)) return NotFound();
+
+            if (schoolDto == null) return BadRequest(ModelState);
+
+            if(id != schoolDto.SchoolId) return BadRequest(ModelState);
+
+            if (!ModelState.IsValid) return BadRequest();
+
+            var school = _mapper.Map<School>(schoolDto);
+
+            if (!_schoolsReposiory.UpdateSchool(school))
             {
-                return BadRequest();
-            }
-
-            School? school = await _context.Schools.FindAsync(id);
-
-            if (school == null)
-            {
-                return NotFound();
-            }
-
-            // Map the properties of the SchoolDto object to the corresponding properties of the School entity
-            school.HeadOfSchool = schoolDto.HeadOfSchool;
-            school.Address = schoolDto.Address;
-            school.City = schoolDto.City;
-            school.fees = schoolDto.fees;
-            school.Name = schoolDto.Name;
-            school.OtherInfo = schoolDto.OtherInfo;
-            school.Religion = schoolDto.Religion;
-   
-
-            _context.Entry(school).State = EntityState.Modified;
-
-            try
-            {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!SchoolExists(id))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
+                ModelState.AddModelError("", "Something went wrong updating category");
+                return StatusCode(500, ModelState);
             }
 
             return NoContent();
@@ -139,63 +100,69 @@ namespace SchoolRating.Controllers
         // POST: api/Schools
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
-        public async Task<ActionResult<SchoolDto>> PostSchool(SchoolDto schoolDto)
+        [ProducesResponseType(204)]
+        [ProducesResponseType(400)]
+        public IActionResult PostSchool([FromBody] SchoolDto schoolDto)
         {
-            School school = new School()
+            if (schoolDto == null)
+                return BadRequest(ModelState);
+
+            var school = _schoolsReposiory.GetSchools()
+                .Where(s => s.Name == schoolDto.Name)
+                .Where(s => s.Address == schoolDto.Address)
+                .Where(s => s.City == schoolDto.City)
+                .FirstOrDefault();
+
+            if (school != null)
             {
-                HeadOfSchool = schoolDto.HeadOfSchool,
-                Address = schoolDto.Address,
-                City = schoolDto.City,
-                fees = schoolDto.fees,
-                Name = schoolDto.Name,
-                OtherInfo = schoolDto.OtherInfo,
-                Religion = schoolDto.Religion,
-               
-            };
+                ModelState.AddModelError("", "School already exists");
+                return StatusCode(422, ModelState);
+            }
 
-            _context.Schools.Add(school);
-            await _context.SaveChangesAsync();
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
 
-            SchoolDto createdSchoolDto = new SchoolDto()
+            var schoolMap = _mapper.Map<School>(schoolDto);
+
+            if (!_schoolsReposiory.CreateSchool(schoolMap))
             {
-                SchoolId = school.SchoolId,
-                HeadOfSchool = school.HeadOfSchool,
-                Address = school.Address,
-                City = school.City,
-                fees = school.fees,
-                Name = school.Name,
-                OtherInfo = school.OtherInfo,
-                Religion = school.Religion,
-                
-            };
+                ModelState.AddModelError("", "Something went wrong while saving");
+                return StatusCode(500, ModelState);
+            }
 
-            return CreatedAtAction(nameof(GetSchool), new { id = createdSchoolDto.SchoolId }, createdSchoolDto);
+            return Ok("Successfully created");
         }
+        
+
+
 
 
         // DELETE: api/Schools/5
         [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteSchool(long id)
+        [ProducesResponseType(400)]
+        [ProducesResponseType(204)]
+        [ProducesResponseType(404)]
+        public IActionResult DeleteSchool(long id)
         {
-            if (_context.Schools == null)
-            {
-                return NotFound();
-            }
-            var school = await _context.Schools.FindAsync(id);
-            if (school == null)
+
+            if (!_schoolsReposiory.SchoolExist(id))
             {
                 return NotFound();
             }
 
-            _context.Schools.Remove(school);
-            await _context.SaveChangesAsync();
+            var schoolToDelete = _schoolsReposiory.GetSchool(id);
+
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            if (!_schoolsReposiory.DeleteSchool(schoolToDelete))
+            {
+                ModelState.AddModelError("", "Something went wrong deleting category");
+            }
 
             return NoContent();
         }
 
-        private bool SchoolExists(long id)
-        {
-            return (_context.Schools?.Any(e => e.SchoolId == id)).GetValueOrDefault();
-        }
+       
     }
 }

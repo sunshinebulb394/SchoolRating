@@ -35,7 +35,7 @@ namespace SchoolRating.Models
 		
 		public string? OtherInfo { get; set; }
 
-		public IList<Rating> Ratings { get; set; } = default!;
+		public IList<Rating>? Ratings { get; set; } = default!;
 
 	}
 }
