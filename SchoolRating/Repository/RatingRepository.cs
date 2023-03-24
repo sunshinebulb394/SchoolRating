@@ -60,7 +60,7 @@ namespace SchoolRating.Repository
 
         public Task<bool> UpdateRatingAsync(Rating rating)
         {
-            _context.Ratings.Update(rating);
+            _context.Update(rating);
             return SaveAsync();
         }
     }
